@@ -1,5 +1,7 @@
 ---
 title: "Analyzing my Spotify"
+navbar:
+    title: "Cars"
 output:
     html_document:
       theme: cosmo

@@ -3,3 +3,4 @@
 .RData
 .Rhistory
 cred.env
+*.DS_Store

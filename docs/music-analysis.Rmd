@@ -1,0 +1,423 @@
+---
+title: "Analyzing my Spotify"
+output:
+  html_document:
+    df_print: paged
+---
+## Introduction
+The idea for this project started earlier this year when the results of my Spotify wrapped were released. I thought their characterization of my listening profile was a little outlandish, albeit somewhat accurate. While I listen to a wide range of genres and artists, Spotify determined that overall, my music taste was "nervous, gloomy, and cathartic". I found this to be pretty funny, but overall my doubts about this characterization got me thinking deeper about the characteristics of songs I listened to. Broadly speaking, I would say that I listen to music in 3 separate contexts : When I am doing work, when I am hanging out with friends or driving around, and when I am just relaxing/doing anything else. Looking over my playlists, I started to realize that there were some immediate differences in genre and mood when observing playlists made for those 3 contexts, and I was interested to see if any quantitative differences could be observed when taking a deeper look at the song data for the tracks that fell into each of those different listening contexts.
+
+That is essentially the question this analysis aims to answer: What are the differences in characteristics of songs I listen to in different contexts? And furthermore, is there a possible qualitative explanation that can explain why those differences arise?
+
+This project is broken down into 3 main sections. The first will detail the data extraction process through utilizing the Spotify API, and then will describe the data cleaning and wrangling process used to obtain the final dataframe. The next section will be an Exploratory Data Analysis of 3 main audio features that I hypothesize would be different across listening contexts, and an initial attempt at reasoning about observed differences between contexts will be made. Finally, in an attempt to build a firmer understanding of the underlying differences between songs in different categories, a standard decision tree and random forest classification model will be built to attempt to classify songs based on their audio features. The decision rules and feature importances will then be examined in order to obtain a deeper understanding of how song characteristics influence the context in which I listen to them. I would also just like to clarify that this is an introductory project done so I can both answer my research question but also practice Data Analysis skills, and as such, the conclusion section will also list out future improvements that could be implemented in order to improve different aspects of this analysis.
+
+## Importing and Wrangling Data
+First the necessary libraries are imported. The utilization of each package is described in the comments below.
+
+```{r Import Libraries, results=FALSE, message=FALSE}
+# For Data Wrangling and Display
+library(tidyverse)
+library(reshape2)
+library(kableExtra)
+# Wrapper for the Spotify API
+library(spotifyr)
+# For Constructing the model
+library(caret)
+library(randomForest)
+library(rpart)
+library(caTools)
+# For Model Display
+library(rattle)
+library(rpart.plot)
+# Knitting Output and custom formatting
+library(knitr)
+# Concealing API Key
+library(dotenv)
+```
+
+Next, the Client and Secret ID keys for accessing the Spotify API are stored as environment variables. As described in the documentation, an access_token object is instantiated, and it will be used in the API calls made later on.
+```{r Storing API credentials}
+load_dot_env("cred.env")
+Sys.setenv(SPOTIFY_CLIENT_ID = Sys.getenv("client_id"))
+Sys.setenv(SPOTIFY_CLIENT_SECRET = Sys.getenv("secret_id"))
+access_token <- get_spotify_authorization_code()
+```
+
+After credentials are established, the next step is to retrieve the playlist data from Spotify. Since the playlists are already organized by category on my Spotify account, 3 separate dataframes are created. Each listening category (night, work, and lounge) is stored in a separate dataframe. Then, the Track name, Track ID, Track Popularity, and Track artist variables are selected. A new column called category is created, and the listening category of each playlist is assigned based on the playlist that is imported. Next, since the spotifyr package parses the API response to store the artist name as a list of lists to handle multiple artists on the same track, the track.artists column is populated by the extracted first element of the artist list, which in this case would be the main artist on the track (i.e. the non-feature artist). Finally, for ease of viewing, the track.artists column is reordered to be the second column in the dataframe.
+```{r importing Playlist Data}
+night_tracks <- get_playlist_tracks('3Mx4GqiZU0pg53fXRXmwQw') %>% 
+  select(track.name, track.id, track.popularity,track.artists) %>% 
+  mutate(
+    category = "night", 
+    track.artists = sapply(sapply(track.artists,'[',3),'[',1)
+  ) %>% 
+  relocate(track.artists, .after = track.name)
+
+work_tracks <- get_playlist_tracks('3NPOt1ksKIONHhQrKMzCgn') %>%
+  select(track.name, track.id, track.popularity, track.artists) %>%
+  mutate(
+    category = "work", 
+    track.artists = sapply(sapply(track.artists,'[',3),'[',1)
+  ) %>% 
+  relocate(track.artists, .after = track.name)
+
+lounge_tracks <- get_playlist_tracks('2kV84OoCK0Y2EuggYvMUTM') %>%
+  select(track.name, track.id, track.popularity,track.artists) %>% 
+  mutate(
+    category = "lounge", 
+    track.artists = sapply(sapply(track.artists,'[',3),'[',1)
+  ) %>% 
+  relocate(track.artists, .after = track.name)
+```
+
+To verify that the API response was parsed correctly, the first 5 rows of the output dataframe for the Night Songs are displayed below. As expected, all columns are imported successfully, and the track.artists column was successfully cleaned to display only the main artist on the track.
+```{r Displaying initial DataFrame}
+kbl(head(night_tracks)) %>% kable_material()
+```
+
+Next, the quantitative features of each track in the playlist was obtained. The get_audio_features method was used with the track.id column being passed in as a parameter. For each listening category, the audio features were stored in a separate dataframe. 
+```{r Import audio features}
+night_features <- get_track_audio_features(night_tracks$track.id)
+work_features <- get_track_audio_features(work_tracks$track.id)
+lounge_features <- get_track_audio_features(lounge_tracks$track.id)
+```
+
+Finally, the dataframes containing song data and audio features were merged in two steps. The code below first rowbinds the track information for each listening category into one dataframe, and does the same for the audio feature dataframes. Then, the two dataframes are merged into a complete dataframe containing all variables. The track.id column was used as the identifier that binded the dataframes. Finally, extraneous columns such as the uri, type, trackhref, and analysis_url were removed, resulting in the complete dataframe for all variables of analysis across all 3 listening categories.
+```{r Merging tracks and audio features}
+tracks_complete <- bind_rows(night_tracks, work_tracks, lounge_tracks)
+features_complete <- bind_rows(night_features, work_features, lounge_features)
+df <- tracks_complete %>% 
+  left_join(features_complete, by = c("track.id" = "id")) %>% 
+  select(-c(uri,type,track_href,analysis_url))
+```
+
+For reference, the first 5 rows of the complete dataframe are displayed below. This confirms the merge worked as expected, and all variables have been preserved.
+```{r Displaying df head}
+df %>% 
+  head() %>% 
+  kbl() %>% 
+  kable_material()
+```
+
+Examining the dataframe further, the complete dataframe has 183 rows and 15 columns. There are also no N/A's or empty cells in our dataframe, which will benefit the model creation and analysis later on.
+```{r Dataframe shape}
+paste("Number of Rows: ",nrow(df))
+paste("Number of Columns: ",ncol(df))
+paste("Number of NA: ",sum(is.na(df)))
+```
+
+## Exploratory Data Analysis
+
+3 features were chosen to be explored: Popularity, Valence, and Danceability. The distribution and spread of each variable in each category will be examined, and prior to constructing a model, preliminary characteristics of songs from each listening category will be analyzed in an attempt to generally describe optimal songs for each listening context.
+
+### Popularity
+Per the Spotify API documentation:
+
+>Popularity: The popularity of the album. The value will be between 0 and 100, with 100 being the most popular.
+
+Next, since popularity is a continuous variable, the distribution across each listening category was examined. Based on the density plot below, track popularity in all 3 listening categories is bimodal. However in the lounge music category, the majority of the data is concentrated between the scores of 0 and 50. In the night and work categories, the majority of data is concentrated between the scores 50 and 80. The local maxima occurs around a score of 10 for the lounge category, a score of 55 for the night category, and a score of 70 for the work category. This indicates that tracks I listen to in a lounge/relaxed context are less popular than tracks I listen to when working, or at night. Based on experience, this could be confounded with the fact that tracks I listen to when working are typically higher energy and more motivational, which tend to be more in line with dominant song conventions found in pop music or popular trap songs. In terms of the night category, I often listen to these songs when I am driving around and hanging out with friends, which means that the songs found in that playlist contain more popular songs that both my friends and I are likely to know, as opposed to songs from my collection that I have a more personal attachment to.
+
+```{r Density Plot of Popularity}
+df %>% 
+  ggplot(aes(x = track.popularity, group = category, fill = category)) + 
+    geom_density(alpha=0.4) +
+    facet_wrap(~category) + 
+    theme_minimal() +
+    theme(
+      legend.position="none",
+      panel.spacing = unit(0.1, "lines"),
+      axis.ticks.x=element_blank(),
+      plot.title = element_text(hjust = 0.5)
+    ) +
+    xlab("Track Popularity") +
+    ylab("") + 
+    ggtitle("Distribution of Track Popularity by Category")
+```
+Next, the variation of popularity across all listening categories was examined. From the graph below, it is confirmed that the lounge category has the greatest proportion of tracks that are significantly below the overall mean popularity of the dataset. However, it is interesting to note that the category with the most variance is the work category. The most popular song in the category has a score of 82, and the least popular song has a score of 0. It also appears that across all 3 categories, the tracks that are below the overall mean popularity score on average have the lowest average popularity in the work category, whereas in the lounge and night categories popularity scores are more evenly distributed across the spread of scores. In essence, this means that the work category has the most "polarized" collection of songs, i.e. the popular songs in this category are very popular, and the least popular tracks in this category tend to be very obscure.  
+
+```{r Popularity Deviation from mean}
+df %>% 
+  mutate(
+    popularity_difference = track.popularity - 37.60656
+  ) %>% 
+    ggplot(aes(
+      x=reorder(track.name,-popularity_difference),
+      y=popularity_difference,
+      fill = category)) +
+    geom_col(alpha = 0.9) + 
+    theme_minimal() + 
+    theme(
+      axis.title.x = element_blank(),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.ticks.y = element_blank(),
+      legend.position = "none",
+      panel.grid.major = element_blank(),
+      plot.title = element_text(hjust=0.5)
+    ) +
+    facet_wrap(~category) +
+    ylab("Difference from Mean") +
+    ggtitle("Popularity Variance from Mean")
+```
+Looking at the standard deviations of popularity in each category confirms this. The work category has the highest sd with a value of 31.997, followed by the night category with a value of 27.676, with the lounge category having the lowest standard deviation of 20.232.
+```{r Table of Standard Deviations for popularity}
+df %>% 
+  group_by(category) %>% 
+  summarise_at(vars(track.popularity),list(sd=sd)) %>% 
+  kbl() %>% 
+  kable_material()
+```
+
+### Danceability
+From the Spotify API documentation:
+
+>Danceability describes how suitable a track is for dancing based on a combination of musical elements including tempo, rhythm stability, beat strength, and overall regularity. A value of 0.0 is least danceable and 1.0 is most danceable.
+
+Similar to the Popularity variable, the distribution of danceability across all 3 categories was examined first. Unlike the track popularity, the distribution of danceability across all 3 categories is unimodal. The lounge category density curve peaks at a score of 0.45, while the night and work categories peak at scores of 0.6 and 0.8 respectively. Intuitively, this also makes sense, since I tend to listen to more high energy and thus danceable tracks when when working. When relaxing, I tend to want to destress and listen to more down tempo and atmospheric compositions, wheras at night I try to find a middle ground. When with friends, we tend to listen to faster paced and harder hitting songs, but the playlist also contains more moody songs that tend to be played late at night. It makes sense that tracks that strike the balance between both of those characteristics have a modal peak in between the other two categories.
+```{r Distribution of Danceability}
+df %>% 
+  ggplot(aes(x = danceability, fill = category)) +
+  geom_density(alpha = 0.4) +
+  theme_minimal() +
+  theme(
+    legend.title = element_blank() , 
+    plot.title = element_text(hjust=0.5)
+  ) +
+  ylab("") +
+  xlab("Danceability") +
+  ggtitle("Distribution of Danceability by Category")
+```
+Next, the spread of danceability across categories was examined. Based on the above reasoning, it also makes intuitive sense that the night category has the largest spread. Since it accounts for a wider range of listening contexts, a larger range of danceability scores is expected. However, when examining the mean (indicated by the colored dot on the graph), it is observed that there are more higher tempo tracks in this category than slower, moody tracks. Essentially this indicates that a greater proportion of the songs in this category are oriented towards listening to music with my friends, since the average danceability score is closer to 1.0.
+```{r Spread of Danceability}
+df %>% 
+  group_by(category) %>% 
+  summarise_at(vars(danceability),
+               list(mean=mean, sd=sd, min=min, max=max)) %>% 
+  ggplot(aes(x=mean,y=category,fill=category))+
+  geom_errorbar(aes(xmin=min,xmax=max)) +
+  geom_point(aes(y=category,x=mean,color=category)) +
+  theme_minimal() +
+  theme(
+    axis.title.y = element_blank(),
+    plot.title = element_text(hjust=0.5)
+  ) +
+  xlab("Danceability") +
+  ggtitle("Spread of Danceability across Category")
+```
+
+### Valence
+Finally, the valence value of each track was examined. From the Spotify API documentation, valence is defined as:
+
+>A measure from 0.0 to 1.0 describing the musical positiveness conveyed by a track. Tracks with high valence sound more positive (e.g. happy, cheerful, euphoric), while tracks with low valence sound more negative (e.g. sad, depressed, angry).
+
+Intuitively, the same logic that governed the distribution of danceability should hold when examining the distribution of valence. "Happier" songs tend to be more danceable, and it would be expected that the songs in the work category would tend to have a higher valence than other categories. Intuitively, I would expect that the lounge category would also have the lowest mean valence since it does not deal with the mix of high and low tempo tracks contained in the night category. However, when examining the distribution, these hypotheses do not hold. The lounge category tends to have the highest modal peak for valence values, at around a score of 0.70. The work and night categories have their modal peaks around scores of 0.30 and 0.25 respectively. I think this discrepancy between observation and hypothesis can be attributed to genre differences between categories. Tracks in the lounge category are dominated by classical hip-hop revivalist songs, or songs from the post-SLUMS collective hip-hop wave. These songs primarily utilize soul samples and vintage instrumentation, and their warmer pallette of sounds seems to be what is contributing to their higher valence scores. Tracks in the work category are comprised of mainly trap songs released between 2016 and 2021, and their instrumental palette tends to be comprised more of dark synths and atmospheric pads. This could explain why their danceability score would be high (since the drums are faster paced), but their valence scores are low (since their instrumental palette is darker). As always, the night category falls somewhere in between, although very marginally.
+```{r Distribution of Valence}
+df %>% 
+  ggplot(aes(x = valence, group = category, fill = category)) + 
+    geom_density(alpha=0.4) +
+    facet_wrap(~category) + 
+    theme_minimal() +
+    theme(
+      legend.position="none",
+      panel.spacing = unit(0.1, "lines"),
+      axis.ticks.x=element_blank(),
+      plot.title = element_text(hjust = 0.5)
+    ) +
+    xlab("Valence") +
+    ylab("") + 
+    ggtitle("Distribution of Valence by Category")
+```
+
+When examining the spread of valence across categories, it appears that the work category has the highest range of valence values, followed by the night and lounge categories. Genre differences can again partially explain this observation. The work category tends to have both trap and pop songs, whereas the lounge category tends to have more hip-hop oriented songs. While the night category has both RnB and trap songs, their instrumental palette tends to be darker across the board, which could explain why the valence scores are less diffuse across the dataset. 
+```{r Spread of Valence across categories}
+df %>% 
+  group_by(category) %>% 
+  summarise_at(vars(valence),
+               list(min=min,max=max,mean=mean)) %>% 
+  melt(id.vars='category') %>% 
+  ggplot(aes(x=value,y=category)) +
+    geom_line() +
+    geom_point(aes(color=variable),size=3) +
+    theme_minimal() +
+    theme(
+      legend.position = "none",
+      axis.title.y = element_blank(),
+      plot.title = element_text(hjust=0.5)
+    ) +
+    xlab('Valence') +
+    ggtitle("Variance of Valence across Category")
+```
+
+### EDA Summary
+To conclude this section, the differences in means and standard deviations for each statistic are summarized in the graphs below. For track popularity, the night category has the highest mean popularity, followed by the work and lounge categories. For Danceability, the work category has the highest mean, followed by night and lounge categories. For Valence, the lounge category has the highest mean, followed by the night and work categories.
+```{r Mean Values Bar Graphs}
+df %>% 
+  group_by(category) %>%
+  summarise(across(where(is.numeric), mean), .groups = 'drop') %>% 
+  select(category, track.popularity, danceability, valence) %>% 
+  melt(id.vars='category') %>% 
+  ggplot(aes(x=category,y=value,fill=category)) +
+    geom_bar(stat="identity",position="dodge",alpha=0.8) +
+    facet_wrap(~variable,scales="free_y") +
+    theme_minimal() +
+    theme(
+        legend.position="none",
+        axis.title.x = element_blank(),
+        plot.title = element_text(hjust=0.5)
+    ) +
+    ylab("Mean Value") +
+    ggtitle("Mean Values Across Categories")
+```
+For standard deviations, the ranking is as follows. For track popularity, the work category has the highest standard deviation, followed by the night and lounge categories. For Danceability, the night category has the highest standard deviation, followed by the work and lounge categories. Finally, for the valence score, the night category has the highest standard deviation, followed by the work and lounge categories.
+```{r SD across categories}
+df %>% 
+  group_by(category) %>%
+  summarise(across(where(is.numeric), sd), .groups = 'drop') %>% 
+  select(category, track.popularity, danceability, valence) %>% 
+  melt(id.vars='category') %>% 
+  ggplot(aes(x=category,y=value,fill=category)) +
+    geom_bar(stat="identity",position="dodge",alpha=0.8) +
+    facet_wrap(~variable,scales="free_y") +
+    theme_minimal() +
+    theme(
+        legend.position="none",
+        axis.title.x = element_blank(),
+        plot.title = element_text(hjust=0.5)
+    ) +
+    ylab("Standard Deviation") +
+    ggtitle("Standard Deviations across Categories")
+```
+
+For confirmation of the above values, the specific values of means and standard deviations across categories are listed below.
+```{r Mean Table}
+df %>% 
+  group_by(category) %>% 
+  summarise(across(where(is.numeric), mean), .groups = 'drop') %>% 
+  select(category, track.popularity, danceability, valence) %>% 
+  kbl() %>% 
+  kable_material()
+```
+```{r SD Table}
+df %>% 
+  group_by(category) %>% 
+  summarise(across(where(is.numeric), sd), .groups = 'drop') %>% 
+  select(category, track.popularity, danceability, valence) %>% 
+  kbl() %>% 
+  kable_material()
+```
+
+## Model Creation
+The next stage in this project was to attempt to build a predictive model that could attempt to both accurately predict the song listening context and also describe feature importance when determining constitutive song features across listening contexts. Since this is a multiclass classification problem, a decision tree model as well as a random forest extension was chosen. The decision tree was chosen due to its intuitive logic lending itself to a high degree of explainability, and through an examination of feature importance, the logic behind classification can be easily exposed. The random forest extension was chosen in order to improve the predictive capability of the model due to the shortcomings of a traditional decision tree in this context.
+
+### Decision Tree
+Even though 3 variables were examiend in the previous section, the model construction in this section will involve all quantitative variables as well as the category being the output variable. The first step is to set the random seed in order for the results to be reproducible. Next, the category column in the data frame is converted to a factor type instead of a character type, so the model recognizes the output variable as categorical. Then, all non-numeric columns other than category are excluded from the data frame, and the dataset is split into testing and training portions, with the ratio of training to testing data being 0.75.
+```{r Train-Test Split}
+set.seed(42)
+df$category <- as.factor(df$category)
+df <- df %>% 
+  select(category,where(is.numeric))
+sample_data = sample.split(df, SplitRatio = 0.75)
+train_data <- subset(df, sample_data == TRUE)
+test_data <- subset(df, sample_data == FALSE)
+```
+
+Then, the control parameters for the model are initialized. Repeated cross validation is used as an evaluation mechanism, and the number of folds as well as the number of repeats are both set to 10. k-fold Cross validation is essentially a method of model evaluation which involves dividing the data set into k non-overlapping folds (k in this case being 10), and then having one fold being the testing data set while all other folds are used as the training data set. Then, the mean result across all folds is reported to gauge accuracy. For the regular decision tree, the rpart method is used, which is the regular decision tree method implemented in the caret package. The metric to maximize is specified as the accuracy, and the tuneLength (which is the maximum number of parameters being combined in the optimization process) is set to 10.
+```{r Training Rpart, results='hide',warning=FALSE}
+set.seed(123)
+Control = trainControl(method= "repeatedcv",number=10,repeats=10,classProbs=TRUE,summaryFunction =multiClassSummary)
+tree <- train(category ~ ., 
+              data=train_data,
+              method="rpart2",
+              trControl = Control,
+              metric = "Accuracy",
+              tuneLength=10)
+```
+
+Now that the model has been trained and fitted, the statistics can be observed below. Based on the gridsearch used for optimization, the optimal tree depth was found to be 3, and this model then has an accuracy of 0.56 after the k-fold cross validation conducted using the training data.
+```{r Model Stats}
+tree
+```
+
+To examine accuracy further, the model made predictions on the testing set and a confusion matrix was generated to examine the results. Based on the confusion matrix the model is very good at predicting the lounge category. The high sensitivity indicates that the model is good at identifying true positives in the lounge category, over all tracks in the dataset labeled as the lounge category. The high specificity indicates that the model is also good at rejecting tracks from the lounge category, when the tracks true value is not the lounge category. When it comes to the night category, the model is bad at identifying a track as falling within the night category when its true value falls within the night category. However, the high specificity indicates that the model is good at rejecting a track from the night category, when its true value is not part of the night category. Finally, when it comes to the work category, the sensitivity and specificity are both closer to 0.5. This indicates that the model is worse than the lounge category but better than the night category when it comes to correctly classifying tracks in the work category when their true value is in the work category. Similarly, the model is worse than the lounge category but better than the night category when it comes to rejecting tracks from the work category when their true value is outside of the work category. It is also worth noting that the model is better at rejecting tracks from the work category than it is at correctly identifying tracks in the work category. 
+```{r}
+rpart_pred <- predict(tree,newdata=test_data)
+confusionMatrix(rpart_pred,test_data$category)
+```
+
+A visualization of the model can be found below. With a depth of 3, it is observed that the first decision point occurs when examining the duration of the track. If the track is shorter than 2.6 minutes, then the model becomes more confident that the track falls into the lounge category. The track popularity is then examined. If the track popularity is less than 56, then the song is classified as a lounge track. If the track is more popular than a score of 56, then the track is classified as a work track. This indicates that the characteristics of lounge tracks are that they tend to be shorter and less popular compared to work tracks and night tracks. On the other end of the tree, if the duration is found to be longer than 2.6 minutes, then the probability that the track is a night track is increased. The acousticness is then examined. If the acousticness of a song is greater than or equal to 0.27, then the probability that a track is a night track further increases. With these conditions, if a track has a popularity score of 45, then it is classified as a night track. Otherwise, it is classified as a work track. If a track has an acousticness that is greater than 0.27, the energy of a track is then examined. If the energy of a track is greater than 0.76, the track is classified as a night track. If not, then the track is classified as a work track. This assessment indicates that longer tracks that are more acoustic and more popular fall into the night tracks category. Furthermore, longer, less acoustic track that are also higher energy are also classified as night tracks. If a track has an acousticness lower than 0.27, but has an energy that is less than 0.76, then the track tends to be classified as a work track. In short, lounge tracks are shorter, less popular, and have high valence with low energy. Night tracks are longer, more acoustic and more popular compared to other categories, while work tracks are longer, less acoustic, but higher energy.
+```{r}
+library(rpart.plot)
+rpart.plot(tree$finalModel)
+```
+
+Next, the feature importances of the decision tree were analyzed. The importances are stored into a dataframe titled importance.
+```{r}
+importance <- varImp(tree, scale=FALSE)
+```
+
+
+The dataframe is then reordered by max importance value, and displayed in descending order. All features with an importance value of 0 were excluded. It is observed that the duration, valence, and danceability are the most important features when attempting to classify the listening context of a song. As stated above, shorter songs with a higher valence are characteristics of lounge tracks. Longer tracks that are higher in valence and energy are night tracks. Night tracks tend to be less popular and instrumental as well. Finally, work tracks tend to be longer, more danceable, but more acoustic and more popular as well.
+```{r}
+importance$importance %>% 
+  mutate(feature = rownames(importance$importance)) %>% 
+  filter(Overall > 0) %>% 
+  ggplot(aes(
+    x = reorder(feature,Overall),
+    y= Overall
+  )) +
+  geom_bar(position="dodge",stat = "identity") +
+  ylab("Feature Importance") +
+  coord_flip() +
+  theme_minimal() +
+  theme(
+    axis.title.y = element_blank()
+  ) +
+  ggtitle("Decision Tree Feature Importance")
+```
+
+### Random Forest
+Next, a random forest model was generated to compare accuracy metrics to the standard decision tree model. While this model is less explainable, an analysis of feature importance can also explain some constitutive features of tracks across different listening contexts. Similar to the previous section, the model is trained and instantiated below. The training control method is the same, and the metric to be maximized is accuracy. 
+```{r}
+rf <- train(category ~ ., 
+              data=train_data,
+              method="rf",
+              trControl = trainControl(method="cv", number=10),
+              metric = "Accuracy")
+```
+
+After cross validation, it becomes evident that this model has a higher accuracy compared to the standard decision tree model. The optimal mtry value (which determines how many parameters are considered for each new split in the decision tree) is found to be 2. At this value, the model accuracy during cross validation is found to be around 0.72.
+```{r}
+rf
+```
+
+Examining the confusion matrix yields adidtional insight on per category classification. After prediction on the test data, the overall accuracy is found to be 0.56, which is higher than the standard decision tree. Similar to the previous model, the random forest model is good at correctly classifying lounge tracks when they are truly lounge tracks, and good at rejecting lounge tracks when their true value is not being a lounge track. The model specificity is also low on both the night and work classes, which indicates that the model is not good at correctly classifying a track as work or night when the true value of the track is work or night. The specificity is high in both those categories however, which indicates that the model is good at rejecting a classification of work or night when the true value is not work or night. This implies that in both models, the decision rules created are not good at separating work and night tracks, but have come up with good decision rules for classifying lounge tracks. This is confirmed with the balanced accuracy of the model being highest for the lounge class. 
+```{r}
+rf_pred <-predict(rf, newdata=test_data)
+confusionMatrix(rf_pred,test_data$category)
+```
+
+Next, the feature importances of the model were examined in order to examine the decision rules further. Surprisingly, the same features have high relevance in both the standard decision tree and the random forest model. The most important features in the random forest model are the duration, danceability, valence, and popularity. This confirms that even though the standard decision tree model might not be the best at identifying all types of tracks, the characteristics of each category as explained in the last section are still generally good rules when it comes to classifying the songs listening context. Again, shorter, more obscure songs with low danceability and high valence tend to be lounge tracks, whereas longer, more popular tracks tend to be work tracks or night tracks. Higher energy tracks tend to be work tracks, and more acoustic tracks tend to be night tracks.
+```{r}
+rf_imp <- varImp(rf$finalModel, scale=FALSE)
+```
+```{r}
+rf_imp %>% 
+  mutate(feature = rownames(rf_imp)) %>% 
+  filter(Overall > 0) %>% 
+  ggplot(aes(
+    x = reorder(feature,Overall),
+    y= Overall
+  )) +
+  geom_bar(position="dodge",stat = "identity") +
+  ylab("Feature Importance") +
+  coord_flip() +
+  theme_minimal() +
+  theme(
+    axis.title.y = element_blank()
+  ) +
+  ggtitle("Random Forest Feature Importance")
+```
+
+## Conclusion
+In conclusion, this analysis aimed to describe songs that fit my various listening contexts, as well as attempted to construct a model that predicted listening context based on various song features. Through a combination of EDA and feature analysis, the following was determined. Tracks I listened to in a lounge context were low valence, less popular, not very danceable and short. Considering the genre context of these tracks, this analysis makes intuitive sense. Lounge tracks were heavily sample based making them warmer in tone, but also grounded in classical hip hop, which means their slower tempo contributed to its low danceability score. Tracks listened to in a work context had higher energy, lower valence, were more popular, and more danceable. This also makes sense, as these tracks were more pop and trap oriented, which are genres that traditionally have a higher emphasis on energy and danceability, and are also more popular genres of music as well. Tracks listened to in a night context were more polarized across the board, as the combination of RnB songs with more popular trap songs made drawing clean decision rules harder. However, it was still observed that night tracks were more danceable, and popular than lounge tracks, but had a lower valence. Night tracks were less danceable and acoustic than work tracks, but also had a slightly higher valence and slightly higher popularity. A random forest and standard decision tree were then constructed. The random forest model had a better accuracy score than the standard decision tree model, but they were both similar in terms of their sensitivity and specificity across the lounge category. Both models were good at identifying the true positives and rejecting the true negatives when it came to the lounge category, but were worse at separating night tracks from work tracks. The specificity of the random forest model across all 3 categories was higher than the standard decision tree model, which indicates that the random forest was better at rejecting tracks from a certain classification category when their true value was outside of that classification category. In a future revision, a more detailed hyperparameter tuning could be conducted to improve model accuracy when identifying night and work tracks. It would also be worth exploring multiple different multi-class classification models and comparing performance on this dataset. Finally, a larger dataset could also alleviate this models difficulty distinguishing between work and night tracks, and a more substansive analysis of decision rules governing those two classes could follow as well.
+

@@ -1,10 +1,10 @@
 ---
 title: "Analyzing my Spotify"
-navbar:
-    title: "Cars"
+author: "Chait Sayani"
 output:
-    html_document:
-      theme: cosmo
+  prettydoc::html_pretty:
+    theme: leonids
+    highlight: github
 ---
 ## Introduction
 The idea for this project started earlier this year when the results of my Spotify wrapped were released. I thought their characterization of my listening profile was a little outlandish, albeit somewhat accurate. While I listen to a wide range of genres and artists, Spotify determined that overall, my music taste was "nervous, gloomy, and cathartic". I found this to be pretty funny, but overall my doubts about this characterization got me thinking deeper about the characteristics of songs I listened to. Broadly speaking, I would say that I listen to music in 3 separate contexts : When I am doing work, when I am hanging out with friends or driving around, and when I am just relaxing/doing anything else. Looking over my playlists, I started to realize that there were some immediate differences in genre and mood when observing playlists made for those 3 contexts, and I was interested to see if any quantitative differences could be observed when taking a deeper look at the song data for the tracks that fell into each of those different listening contexts.
@@ -93,10 +93,10 @@ df <- tracks_complete %>%
   select(-c(uri,type,track_href,analysis_url))
 ```
 
-For reference, the first 5 rows of the complete dataframe are displayed below. This confirms the merge worked as expected, and all variables have been preserved.
+For reference, the first 5 rows and columns of the complete dataframe are displayed below. This confirms the merge worked as expected, and all variables have been preserved.
 ```{r Displaying df head}
 df %>% 
-  head() %>% 
+  head(c(5,5)) %>% 
   kbl() %>% 
   kable_material()
 ```

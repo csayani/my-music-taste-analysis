@@ -1,20 +1,19 @@
 ---
 title: "Analyzing My Music Taste"
 subtitle: "Examining song characteristics across listening contexts"
-author: "Chait Sayani"
 output:
   prettydoc::html_pretty:
     theme: leonids
     highlight: github
 ---
-## Introduction
+# Introduction
 The idea for this project started earlier this year when the results of my Spotify wrapped were released. I thought their characterization of my listening profile was a little outlandish, albeit somewhat accurate. While I listen to a wide range of genres and artists, Spotify determined that overall, my music taste was "nervous, gloomy, and cathartic". I found this to be pretty funny, but overall my doubts about this characterization got me thinking deeper about the characteristics of songs I listened to. Broadly speaking, I would say that I listen to music in 3 separate contexts : When I am doing work, when I am hanging out with friends or driving around, and when I am just relaxing/doing anything else. Looking over my playlists, I started to realize that there were some immediate differences in genre and mood when observing playlists made for those 3 contexts, and I was interested to see if any quantitative differences could be observed when taking a deeper look at the song data for the tracks that fell into each of those different listening contexts.
 
 That is essentially the question this analysis aims to answer: What are the differences in characteristics of songs I listen to in different contexts? And furthermore, is there a possible qualitative explanation that can explain why those differences arise?
 
 This project is broken down into 3 main sections. The first will detail the data extraction process through utilizing the Spotify API, and then will describe the data cleaning and wrangling process used to obtain the final dataframe. The next section will be an Exploratory Data Analysis of 3 main audio features that I hypothesize would be different across listening contexts, and an initial attempt at reasoning about observed differences between contexts will be made. Finally, in an attempt to build a firmer understanding of the underlying differences between songs in different categories, a standard decision tree and random forest classification model will be built to attempt to classify songs based on their audio features. The decision rules and feature importances will then be examined in order to obtain a deeper understanding of how song characteristics influence the context in which I listen to them. I would also just like to clarify that this is an introductory project done so I can both answer my research question but also practice Data Analysis skills, and as such, the conclusion section will also list out future improvements that could be implemented in order to improve different aspects of this analysis.
 
-## Importing and Wrangling Data
+# Importing and Wrangling Data
 First the necessary libraries are imported. The utilization of each package is described in the comments below.
 
 ```{r Import Libraries, results=FALSE, message=FALSE}
@@ -109,11 +108,11 @@ paste("Number of Columns: ",ncol(df))
 paste("Number of NA: ",sum(is.na(df)))
 ```
 
-## Exploratory Data Analysis
+# Exploratory Data Analysis
 
 3 features were chosen to be explored: Popularity, Valence, and Danceability. The distribution and spread of each variable in each category will be examined, and prior to constructing a model, preliminary characteristics of songs from each listening category will be analyzed in an attempt to generally describe optimal songs for each listening context.
 
-### Popularity
+## Popularity
 Per the Spotify API documentation:
 
 >Popularity: The popularity of the album. The value will be between 0 and 100, with 100 being the most popular.
@@ -171,7 +170,7 @@ df %>%
   kable_material()
 ```
 
-### Danceability
+## Danceability
 From the Spotify API documentation:
 
 >Danceability describes how suitable a track is for dancing based on a combination of musical elements including tempo, rhythm stability, beat strength, and overall regularity. A value of 0.0 is least danceable and 1.0 is most danceable.
@@ -208,7 +207,7 @@ df %>%
   ggtitle("Spread of Danceability across Category")
 ```
 
-### Valence
+## Valence
 Finally, the valence value of each track was examined. From the Spotify API documentation, valence is defined as:
 
 >A measure from 0.0 to 1.0 describing the musical positiveness conveyed by a track. Tracks with high valence sound more positive (e.g. happy, cheerful, euphoric), while tracks with low valence sound more negative (e.g. sad, depressed, angry).
@@ -251,7 +250,7 @@ df %>%
     ggtitle("Variance of Valence across Category")
 ```
 
-### EDA Summary
+## EDA Summary
 To conclude this section, the differences in means and standard deviations for each statistic are summarized in the graphs below. For track popularity, the night category has the highest mean popularity, followed by the work and lounge categories. For Danceability, the work category has the highest mean, followed by night and lounge categories. For Valence, the lounge category has the highest mean, followed by the night and work categories.
 ```{r Mean Values Bar Graphs}
 df %>% 
@@ -309,10 +308,10 @@ df %>%
   kable_material()
 ```
 
-## Model Creation
+# Model Creation
 The next stage in this project was to attempt to build a predictive model that could attempt to both accurately predict the song listening context and also describe feature importance when determining constitutive song features across listening contexts. Since this is a multiclass classification problem, a decision tree model as well as a random forest extension was chosen. The decision tree was chosen due to its intuitive logic lending itself to a high degree of explainability, and through an examination of feature importance, the logic behind classification can be easily exposed. The random forest extension was chosen in order to improve the predictive capability of the model due to the shortcomings of a traditional decision tree in this context.
 
-### Decision Tree
+## Decision Tree
 Even though 3 variables were examiend in the previous section, the model construction in this section will involve all quantitative variables as well as the category being the output variable. The first step is to set the random seed in order for the results to be reproducible. Next, the category column in the data frame is converted to a factor type instead of a character type, so the model recognizes the output variable as categorical. Then, all non-numeric columns other than category are excluded from the data frame, and the dataset is split into testing and training portions, with the ratio of training to testing data being 0.75.
 ```{r Train-Test Split}
 set.seed(42)
@@ -378,7 +377,7 @@ importance$importance %>%
   ggtitle("Decision Tree Feature Importance")
 ```
 
-### Random Forest
+## Random Forest
 Next, a random forest model was generated to compare accuracy metrics to the standard decision tree model. While this model is less explainable, an analysis of feature importance can also explain some constitutive features of tracks across different listening contexts. Similar to the previous section, the model is trained and instantiated below. The training control method is the same, and the metric to be maximized is accuracy. 
 ```{r Train rf}
 rf <- train(category ~ ., 
@@ -421,6 +420,6 @@ rf_imp %>%
   ggtitle("Random Forest Feature Importance")
 ```
 
-## Conclusion
+# Conclusion
 In conclusion, this analysis aimed to describe songs that fit my various listening contexts, as well as attempted to construct a model that predicted listening context based on various song features. Through a combination of EDA and feature analysis, the following was determined. Tracks I listened to in a lounge context were low valence, less popular, not very danceable and short. Considering the genre context of these tracks, this analysis makes intuitive sense. Lounge tracks were heavily sample based making them warmer in tone, but also grounded in classical hip hop, which means their slower tempo contributed to its low danceability score. Tracks listened to in a work context had higher energy, lower valence, were more popular, and more danceable. This also makes sense, as these tracks were more pop and trap oriented, which are genres that traditionally have a higher emphasis on energy and danceability, and are also more popular genres of music as well. Tracks listened to in a night context were more polarized across the board, as the combination of RnB songs with more popular trap songs made drawing clean decision rules harder. However, it was still observed that night tracks were more danceable, and popular than lounge tracks, but had a lower valence. Night tracks were less danceable and acoustic than work tracks, but also had a slightly higher valence and slightly higher popularity. A random forest and standard decision tree were then constructed. The random forest model had a better accuracy score than the standard decision tree model, but they were both similar in terms of their sensitivity and specificity across the lounge category. Both models were good at identifying the true positives and rejecting the true negatives when it came to the lounge category, but were worse at separating night tracks from work tracks. The specificity of the random forest model across all 3 categories was higher than the standard decision tree model, which indicates that the random forest was better at rejecting tracks from a certain classification category when their true value was outside of that classification category. In a future revision, a more detailed hyperparameter tuning could be conducted to improve model accuracy when identifying night and work tracks. It would also be worth exploring multiple different multi-class classification models and comparing performance on this dataset. Finally, a larger dataset could also alleviate this models difficulty distinguishing between work and night tracks, and a more substansive analysis of decision rules governing those two classes could follow as well.
 

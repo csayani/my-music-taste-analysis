@@ -337,30 +337,30 @@ tree <- train(category ~ .,
 ```
 
 Now that the model has been trained and fitted, the statistics can be observed below. Based on the gridsearch used for optimization, the optimal tree depth was found to be 3, and this model then has an accuracy of 0.56 after the k-fold cross validation conducted using the training data.
-```{r Model Stats}
+```{r standard DT Model Stats}
 tree
 ```
 
 To examine accuracy further, the model made predictions on the testing set and a confusion matrix was generated to examine the results. Based on the confusion matrix the model is very good at predicting the lounge category. The high sensitivity indicates that the model is good at identifying true positives in the lounge category, over all tracks in the dataset labeled as the lounge category. The high specificity indicates that the model is also good at rejecting tracks from the lounge category, when the tracks true value is not the lounge category. When it comes to the night category, the model is bad at identifying a track as falling within the night category when its true value falls within the night category. However, the high specificity indicates that the model is good at rejecting a track from the night category, when its true value is not part of the night category. Finally, when it comes to the work category, the sensitivity and specificity are both closer to 0.5. This indicates that the model is worse than the lounge category but better than the night category when it comes to correctly classifying tracks in the work category when their true value is in the work category. Similarly, the model is worse than the lounge category but better than the night category when it comes to rejecting tracks from the work category when their true value is outside of the work category. It is also worth noting that the model is better at rejecting tracks from the work category than it is at correctly identifying tracks in the work category. 
-```{r}
+```{r Decision Tree CM}
 rpart_pred <- predict(tree,newdata=test_data)
 confusionMatrix(rpart_pred,test_data$category)
 ```
 
 A visualization of the model can be found below. With a depth of 3, it is observed that the first decision point occurs when examining the duration of the track. If the track is shorter than 2.6 minutes, then the model becomes more confident that the track falls into the lounge category. The track popularity is then examined. If the track popularity is less than 56, then the song is classified as a lounge track. If the track is more popular than a score of 56, then the track is classified as a work track. This indicates that the characteristics of lounge tracks are that they tend to be shorter and less popular compared to work tracks and night tracks. On the other end of the tree, if the duration is found to be longer than 2.6 minutes, then the probability that the track is a night track is increased. The acousticness is then examined. If the acousticness of a song is greater than or equal to 0.27, then the probability that a track is a night track further increases. With these conditions, if a track has a popularity score of 45, then it is classified as a night track. Otherwise, it is classified as a work track. If a track has an acousticness that is greater than 0.27, the energy of a track is then examined. If the energy of a track is greater than 0.76, the track is classified as a night track. If not, then the track is classified as a work track. This assessment indicates that longer tracks that are more acoustic and more popular fall into the night tracks category. Furthermore, longer, less acoustic track that are also higher energy are also classified as night tracks. If a track has an acousticness lower than 0.27, but has an energy that is less than 0.76, then the track tends to be classified as a work track. In short, lounge tracks are shorter, less popular, and have high valence with low energy. Night tracks are longer, more acoustic and more popular compared to other categories, while work tracks are longer, less acoustic, but higher energy.
-```{r}
+```{r Display Tree}
 library(rpart.plot)
 rpart.plot(tree$finalModel)
 ```
 
 Next, the feature importances of the decision tree were analyzed. The importances are stored into a dataframe titled importance.
-```{r}
+```{r Calculate Feature Imp}
 importance <- varImp(tree, scale=FALSE)
 ```
 
 
 The dataframe is then reordered by max importance value, and displayed in descending order. All features with an importance value of 0 were excluded. It is observed that the duration, valence, and danceability are the most important features when attempting to classify the listening context of a song. As stated above, shorter songs with a higher valence are characteristics of lounge tracks. Longer tracks that are higher in valence and energy are night tracks. Night tracks tend to be less popular and instrumental as well. Finally, work tracks tend to be longer, more danceable, but more acoustic and more popular as well.
-```{r}
+```{r Plot Feature Imp}
 importance$importance %>% 
   mutate(feature = rownames(importance$importance)) %>% 
   filter(Overall > 0) %>% 
@@ -380,7 +380,7 @@ importance$importance %>%
 
 ### Random Forest
 Next, a random forest model was generated to compare accuracy metrics to the standard decision tree model. While this model is less explainable, an analysis of feature importance can also explain some constitutive features of tracks across different listening contexts. Similar to the previous section, the model is trained and instantiated below. The training control method is the same, and the metric to be maximized is accuracy. 
-```{r}
+```{r Train rf}
 rf <- train(category ~ ., 
               data=train_data,
               method="rf",
@@ -389,21 +389,21 @@ rf <- train(category ~ .,
 ```
 
 After cross validation, it becomes evident that this model has a higher accuracy compared to the standard decision tree model. The optimal mtry value (which determines how many parameters are considered for each new split in the decision tree) is found to be 2. At this value, the model accuracy during cross validation is found to be around 0.72.
-```{r}
+```{r show rf stats}
 rf
 ```
 
 Examining the confusion matrix yields adidtional insight on per category classification. After prediction on the test data, the overall accuracy is found to be 0.56, which is higher than the standard decision tree. Similar to the previous model, the random forest model is good at correctly classifying lounge tracks when they are truly lounge tracks, and good at rejecting lounge tracks when their true value is not being a lounge track. The model specificity is also low on both the night and work classes, which indicates that the model is not good at correctly classifying a track as work or night when the true value of the track is work or night. The specificity is high in both those categories however, which indicates that the model is good at rejecting a classification of work or night when the true value is not work or night. This implies that in both models, the decision rules created are not good at separating work and night tracks, but have come up with good decision rules for classifying lounge tracks. This is confirmed with the balanced accuracy of the model being highest for the lounge class. 
-```{r}
+```{r rf cm}
 rf_pred <-predict(rf, newdata=test_data)
 confusionMatrix(rf_pred,test_data$category)
 ```
 
 Next, the feature importances of the model were examined in order to examine the decision rules further. Surprisingly, the same features have high relevance in both the standard decision tree and the random forest model. The most important features in the random forest model are the duration, danceability, valence, and popularity. This confirms that even though the standard decision tree model might not be the best at identifying all types of tracks, the characteristics of each category as explained in the last section are still generally good rules when it comes to classifying the songs listening context. Again, shorter, more obscure songs with low danceability and high valence tend to be lounge tracks, whereas longer, more popular tracks tend to be work tracks or night tracks. Higher energy tracks tend to be work tracks, and more acoustic tracks tend to be night tracks.
-```{r}
+```{r varimp rf}
 rf_imp <- varImp(rf$finalModel, scale=FALSE)
 ```
-```{r}
+```{r plot varimp rf}
 rf_imp %>% 
   mutate(feature = rownames(rf_imp)) %>% 
   filter(Overall > 0) %>% 

@@ -1,5 +1,6 @@
 ---
-title: "Analyzing my Spotify"
+title: "Analyzing My Music Taste"
+subtitle: "Examining song characteristics across listening contexts"
 author: "Chait Sayani"
 output:
   prettydoc::html_pretty:

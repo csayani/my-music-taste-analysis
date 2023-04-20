@@ -367,7 +367,7 @@ importance$importance %>%
     x = reorder(feature,Overall),
     y= Overall
   )) +
-  geom_bar(position="dodge",stat = "identity") +
+  geom_bar(stat="identity", position="dodge",fill="#619CFF", alpha = 0.8) +
   ylab("Feature Importance") +
   coord_flip() +
   theme_minimal() +
@@ -410,7 +410,7 @@ rf_imp %>%
     x = reorder(feature,Overall),
     y= Overall
   )) +
-  geom_bar(position="dodge",stat = "identity") +
+  geom_bar(stat="identity", position="dodge",fill="#619CFF", alpha = 0.8) +
   ylab("Feature Importance") +
   coord_flip() +
   theme_minimal() +
